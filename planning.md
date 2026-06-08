@@ -75,6 +75,7 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
      "What do students say about wait times at [dining hall name] during lunch?" is testable. -->
 
 | # | Question | Expected answer |
+|---|----------|-----------------|
 | 1 | What are the hours for Segundo Dining Commons on a Tuesday? | 7:00 AM – 10:00 PM |
 | 2 | Does The Gunrock accept meal swipes or AggieCash? | "No, The Gunrock does not accept meal swipes or recharge billing." |
 | 3 | Where can I get good garlic knots and a spinach stromboli near campus? | [Should retrieve Yelp/Reddit chunks pointing to local Italian restaurants or pizza spots in downtown Davis] |
