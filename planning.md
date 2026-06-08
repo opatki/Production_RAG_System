@@ -109,7 +109,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
   graph TD;
       A[Raw Documents: UCD Sites, Reddit, Yelp] --> B[Data Parser & Cleaner];
       B --> C[LlamaIndex: Chunking Node];
-  subgraph Backend Infrastructure;
       C -->|Hybrid Strategy| D[Embedding Model: all-MiniLM-L6-v2];
       D --> E[(Vector Database: Chroma hosted)];
       E -->|Top-k = 5| F[Retriever];
