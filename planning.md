@@ -105,6 +105,7 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
      You'll use this diagram as context when prompting AI tools to implement each stage. -->
 
 ---
+'''mermaid
 flowchart TD
     A[Raw Documents: UCD Sites, Reddit, Yelp] --> B[Data Parser & Cleaner]
     B --> C[LlamaIndex: Chunking Node]
@@ -119,7 +120,7 @@ flowchart TD
     G --> F
     F --> H[LLM Synthesis: Prompt Template]
     H --> I[Final Answer to User]
-
+'''
 
 ## AI Tool Plan
 
