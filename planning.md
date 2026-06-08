@@ -15,8 +15,6 @@ For my system, I want my domain to be "Food at UC Davis." Throughout my time at 
 
 ## Documents
 
-<!-- List your specific sources: URLs, subreddit names, forum threads, or file descriptions.
-     Aim for at least 10 sources that together cover different subtopics or perspectives within your domain. -->
 
 | # | Source | Type | URL or file path |
 |---|--------|------|-----------------|
@@ -50,11 +48,6 @@ My dataset contains two distinct document archetypes that require different hand
 
 ## Retrieval Approach
 
-<!-- Which embedding model are you using (e.g., all-MiniLM-L6-v2 via sentence-transformers)?
-     How many chunks will you retrieve per query (top-k)?
-     If you were deploying this for real users and cost wasn't a constraint, what tradeoffs
-     would you weigh in choosing a different embedding model — context length, multilingual
-     support, accuracy on domain-specific text, latency? -->
 
 **Embedding model:**
 It creates 384-dimensional vectors, which is lightweight and perfect for running locally during development without API costs.
@@ -69,10 +62,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 
 ## Evaluation Plan
 
-<!-- List your 5 test questions with their expected correct answers.
-     Questions should be specific enough that you can judge whether the system's response
-     is right or wrong. "What are good dining halls?" is too vague.
-     "What do students say about wait times at [dining hall name] during lunch?" is testable. -->
 
 | # | Question | Expected answer |
 |---|----------|-----------------|
@@ -86,9 +75,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 
 ## Anticipated Challenges
 
-<!-- What could go wrong? Name at least two specific risks with reasoning.
-     Consider: noisy or inconsistent documents, missing source attribution, off-topic
-     retrieval, chunks that split key information across boundaries. -->
 
 1. **Entity Resolution and Slang:** Students rarely use official names. A query for "the DC" or "CoHo" might fail to retrieve chunks from the official housing sites that strictly use "Segundo Dining Commons" or "ASUCD Coffee House." The embedding model might not naturally bridge that semantic gap without manual synonym injection.
 
@@ -97,12 +83,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 ---
 
 ## Architecture
-
-<!-- Draw a diagram of your pipeline showing the five stages:
-     Document Ingestion → Chunking → Embedding + Vector Store → Retrieval → Generation
-     Label each stage with the tool or library you're using.
-     You can use ASCII art, a Mermaid diagram, or embed a sketch as an image.
-     You'll use this diagram as context when prompting AI tools to implement each stage. -->
 
 ---
 ```mermaid
@@ -120,16 +100,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 
 
 ## AI Tool Plan
-
-<!-- For each part of the pipeline below, describe:
-     - Which AI tool you plan to use (Claude, Copilot, ChatGPT, etc.)
-     - What you'll give it as input (which sections of this planning.md, which requirements)
-     - What you expect it to produce
-     - How you'll verify the output matches your spec
-
-     "I'll use AI to help me code" is not a plan.
-     "I'll give Claude my Chunking Strategy section and ask it to implement chunk_text()
-     with my specified chunk size and overlap" is a plan. -->
 
 **Milestone 3 — Ingestion and chunking:**
 - **AI Tool:** Claude Code (Sonnet)
