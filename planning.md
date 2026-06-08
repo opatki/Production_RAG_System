@@ -119,23 +119,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 ```
 
 
-'''mermaid
-     graph TD;
-          A[Raw Documents: UCD Sites, Reddit, Yelp] --> B[Data Parser & Cleaner];
-          B --> C[LlamaIndex: Chunking Node];
-    
-    subgraph Backend Infrastructure;
-    C -->|Hybrid Strategy| D[Embedding Model: all-MiniLM-L6-v2];
-    D --> E[(Vector Database: Chroma hosted)];
-    E -->|Top-k = 5| F[Retriever];
-    end
-
-    G[Student Query] --> D
-    G --> F
-    F --> H[LLM Synthesis: Prompt Template]
-    H --> I[Final Answer to User]
-'''
-
 ## AI Tool Plan
 
 <!-- For each part of the pipeline below, describe:
@@ -149,7 +132,22 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
      with my specified chunk size and overlap" is a plan. -->
 
 **Milestone 3 — Ingestion and chunking:**
-
+- **AI Tool:** Claude Code (Sonnet)
+- **Input Context:** I will feed Claude the Domain, Documents, Chunking Strategy, and Architecture Diagram sections from this planning.md file, along with a raw text snippet from one of the UCD dining pages to demonstrate the HTML/markdown structure.
+- **Expected Output:** A Python parsing script using LlamaIndex (or native file parsing) that handles two tracks:
+  - Strips HTML/navigation text from official UCD pages and chunks strictly by Markdown header elements (### Hours, ### Menu), injecting the global restaurant name into each chunk's metadata.
+  - Batches unstructured text from Reddit/Yelp threads using a 500–800 character window with a 100-character overlap, automatically prepending the source thread title onto the body of each chunk for context preservation.
+- Verification Method: I will write a small validation function to print 5 random generated chunks to the console. I will manually verify that they contain zero HTML artifacts, form independent semantic units (not broken sentences), and maintain a total count within the healthy 50–2000 boundary.
+  
 **Milestone 4 — Embedding and retrieval:**
+- **AI Tool:** Claude Code (Sonnet)
+- **Input Context:** I will give Claude the Retrieval Approach parameters and the Architecture Diagram, alongside the ingestion output script from Milestone 3.
+- **Expected Output:** A Python module that loads the local HuggingFace all-MiniLM-L6-v2 sentence-transformer model, converts the generated chunks into 384-dimensional vectors, and populates a local persistent ChromaDB collection. It must include a retrieve_context(query, k=5) function that queries ChromaDB and returns an array of matching text blocks alongside their metadata and vector distance scores.
+- **Verification Method:** I will run at least 3 queries from our Evaluation Plan through the function. I will print out the top-k results and verify that the distance scores are consistently under 0.5 for on-topic questions, and that the metadata correctly maps back to the corresponding source document.
 
 **Milestone 5 — Generation and interface:**
+- **AI Tool:** Claude Code (Sonnet)
+- **Input Context:** I will give Claude our Evaluation Plan, the retrieval function code from Milestone 4, and the Gradio boilerplate requirements specified in the milestone instructions.
+- **Expected Output:** An end-to-end app.py script that configures a Groq client running llama-3.3-70b-versatile. It must include a system prompt that strictly grounds the LLM ("Answer using only the provided context. If the context does not contain the answer, say 'I don't have enough information on that.'") and maps a Gradio interface providing clean, dual-box outputs: one for the generated grounded answer, and one for programmatically listing the source citations.
+- **Verification Method:** I will launch the local Gradio server at http://localhost:7860 and execute all 5 evaluation plan queries. I will verify that specific menu/hour lookups are perfectly accurate, and I will issue an out-of-bounds query (e.g., asking about parking or a professor) to guarantee that the system successfully returns the defensive "insufficient information" fallback instead of hallucinating.
+
