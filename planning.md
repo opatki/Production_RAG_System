@@ -82,12 +82,6 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 | 4 | Which spots in Davis have the best spicy mango habanero wings? | [Should retrieve Quora/Reddit chunks mentioning Wingstop or local wing joints] |
 | 5 | Are there any places near the dorms that serve Indian street food like pav bhaji? | [Should retrieve Latitude Dining information regarding their Indian platform or Reddit chunks mentioning local international food markets]
 
-#,Question,Expected Answer
-1,What are the hours for Segundo Dining Commons on a Tuesday?,7:00 AM – 10:00 PM
-2,Does The Gunrock accept meal swipes or AggieCash?,"No, The Gunrock does not accept meal swipes or recharge billing."
-3,Where can I get good garlic knots and a spinach stromboli near campus?,[Should retrieve Yelp/Reddit chunks pointing to local Italian restaurants or pizza spots in downtown Davis]
-4,Which spots in Davis have the best spicy mango habanero wings?,[Should retrieve Quora/Reddit chunks mentioning Wingstop or local wing joints]
-5,Are there any places near the dorms that serve Indian street food like pav bhaji?,[Should retrieve Latitude Dining information regarding their Indian platform or Reddit chunks mentioning local international food markets]
 ---
 
 ## Anticipated Challenges
