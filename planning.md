@@ -107,8 +107,8 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
 ---
 ```mermaid
   graph TD;
-      A[Raw Documents: UCD Sites, Reddit, Yelp] --> B[Data Parser & Cleaner];
-      B --> C[LlamaIndex: Chunking Node];
+      A[Local Documents: /documents/*.txt] --> B[Data Parser & Cleaner];
+      B --> C[Chunking Engine];
       C -->|Hybrid Strategy| D[Embedding Model: all-MiniLM-L6-v2];
       D --> E[(Vector Database: Chroma hosted)];
       E -->|Top-k = 5| F[Retriever];
@@ -132,12 +132,12 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
      with my specified chunk size and overlap" is a plan. -->
 
 **Milestone 3 — Ingestion and chunking:**
-- **AI Tool:** Claude Code (Sonnet)
-- **Input Context:** I will feed Claude the Domain, Documents, Chunking Strategy, and Architecture Diagram sections from this planning.md file, along with a raw text snippet from one of the UCD dining pages to demonstrate the HTML/markdown structure.
-- **Expected Output:** A Python parsing script using LlamaIndex (or native file parsing) that handles two tracks:
-  - Strips HTML/navigation text from official UCD pages and chunks strictly by Markdown header elements (### Hours, ### Menu), injecting the global restaurant name into each chunk's metadata.
-  - Batches unstructured text from Reddit/Yelp threads using a 500–800 character window with a 100-character overlap, automatically prepending the source thread title onto the body of each chunk for context preservation.
-- Verification Method: I will write a small validation function to print 5 random generated chunks to the console. I will manually verify that they contain zero HTML artifacts, form independent semantic units (not broken sentences), and maintain a total count within the healthy 50–2000 boundary.
+- AI Tool: Claude Code (Sonnet)
+- Input Context: I will feed Claude the Domain, Documents, Chunking Strategy, and Architecture Diagram sections from this planning.md file. I will also point it directly to my local documents/ directory containing the 10 pre-scraped .txt files.
+- Expected Output: A Python parsing script (ingest_pipeline.py) that reads the local .txt files and handles two chunking tracks:
+  - Track A (Official UCD Pages - e.g., ucd_segundo_dc.txt, latitude_restaurant.txt): Chunks strictly by Markdown header elements (like ### Hours) with 0 overlap, injecting the global restaurant name into each chunk's metadata.
+  - Track B (Social/Unstructured - e.g., reddit.txt, yelp.txt): Batches unstructured text using a 500–800 character window with a 100-character overlap, prepending the source filename to the body of each chunk for context preservation.
+- Verification Method: I will write a validation block at the end of the script to print 5 random generated chunks to the console. I will manually verify that they form independent semantic units and maintain a healthy token length before moving to the embedding stage.
   
 **Milestone 4 — Embedding and retrieval:**
 - **AI Tool:** Claude Code (Sonnet)
