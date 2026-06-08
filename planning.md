@@ -112,6 +112,10 @@ If deploying this to a broader student base and cost wasn't an issue, I would up
       C -->|Hybrid Strategy| D[Embedding Model: all-MiniLM-L6-v2];
       D --> E[(Vector Database: Chroma hosted)];
       E -->|Top-k = 5| F[Retriever];
+      G[Student Query] --> D
+      G --> F
+      F --> H[LLM Synthesis: Prompt Template]
+      H --> I[Final Answer to User]
 ```
 
 
