@@ -25,9 +25,10 @@ import sys
 from pathlib import Path
 
 import chromadb
+from rank_bm25 import BM25Okapi
 from sentence_transformers import SentenceTransformer
 
-from ingest_pipeline import Chunk, build_corpus
+from ingest_pipeline import Chunk, build_corpus, build_corpus_fixed
 
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
@@ -39,6 +40,7 @@ if hasattr(sys.stdout, "reconfigure"):
 MODEL_NAME = "all-MiniLM-L6-v2"
 PERSIST_DIR = Path(__file__).parent / "chroma_db"
 COLLECTION_NAME = "ucd_food"
+FIXED_COLLECTION_NAME = "ucd_food_fixed"
 DEFAULT_K = 5
 EMBED_BATCH = 256
 
@@ -48,6 +50,8 @@ EMBED_BATCH = 256
 
 _model: SentenceTransformer | None = None
 _client: chromadb.api.ClientAPI | None = None
+_bm25_index: BM25Okapi | None = None
+_bm25_docs: list[dict] | None = None
 
 
 def get_model() -> SentenceTransformer:
@@ -159,13 +163,156 @@ def build_index(rebuild: bool = False):
 # --------------------------------------------------------------------------- #
 
 
-def retrieve_context(query: str, k: int = DEFAULT_K) -> list[dict]:
+def retrieve_context(
+    query: str,
+    k: int = DEFAULT_K,
+    where: dict | None = None,
+) -> list[dict]:
     """Return the top-k chunks for `query`, with metadata and cosine distance.
 
     Each element: {"text": str, "metadata": dict, "distance": float}.
     Lower distance = closer match (cosine; ~0 identical, ~1 unrelated).
+
+    Args:
+        where: Optional ChromaDB metadata filter, e.g.
+               {"source_file": "ucd_segundo_dc.txt"} or {"track": "A"}.
     """
     collection = get_collection()
+    query_emb = get_model().encode([query], normalize_embeddings=True)[0].tolist()
+    kwargs: dict = {"query_embeddings": [query_emb], "n_results": k}
+    if where:
+        kwargs["where"] = where
+    res = collection.query(**kwargs)
+    docs = res["documents"][0]
+    metas = res["metadatas"][0]
+    dists = res["distances"][0]
+    return [
+        {"text": doc, "metadata": meta, "distance": float(dist)}
+        for doc, meta, dist in zip(docs, metas, dists)
+    ]
+
+
+# --------------------------------------------------------------------------- #
+# Stretch: Hybrid search (BM25 + semantic via Reciprocal Rank Fusion)
+# --------------------------------------------------------------------------- #
+
+
+def _get_bm25() -> tuple[BM25Okapi, list[dict]]:
+    """Lazy-build a BM25 index over the same corpus texts used in ChromaDB."""
+    global _bm25_index, _bm25_docs
+    if _bm25_index is not None:
+        return _bm25_index, _bm25_docs
+    print("[bm25] building index …")
+    corpus = build_corpus()
+    _bm25_docs = [
+        {"text": _embed_text(c), "id": _chunk_id(c, i), "metadata": c.metadata}
+        for i, c in enumerate(corpus)
+    ]
+    tokenized = [doc["text"].lower().split() for doc in _bm25_docs]
+    _bm25_index = BM25Okapi(tokenized)
+    print(f"[bm25] indexed {len(_bm25_docs)} documents")
+    return _bm25_index, _bm25_docs
+
+
+def hybrid_retrieve(query: str, k: int = DEFAULT_K) -> list[dict]:
+    """Hybrid search: BM25 keyword + semantic vector, merged via Reciprocal Rank Fusion.
+
+    RRF score(d) = Σ 1 / (RRF_K + rank_i) across both ranked lists.
+    Using ranks instead of raw scores avoids the need to normalize BM25 and
+    cosine distances onto the same scale.
+    """
+    RRF_K = 60       # standard constant; dampens rank outliers
+    pool = k * 4     # over-fetch before merging
+
+    # Semantic leg
+    sem_results = retrieve_context(query, k=pool)
+
+    # BM25 leg
+    bm25, docs = _get_bm25()
+    tokens = query.lower().split()
+    bm25_scores = bm25.get_scores(tokens)
+    bm25_top_idx = sorted(range(len(bm25_scores)), key=lambda i: -bm25_scores[i])[:pool]
+
+    # Merge via RRF — key on full chunk text (unique per chunk)
+    rrf: dict[str, float] = {}
+    payload: dict[str, dict] = {}
+
+    for rank, r in enumerate(sem_results, 1):
+        key = r["text"]
+        rrf[key] = rrf.get(key, 0.0) + 1.0 / (RRF_K + rank)
+        payload[key] = {**r, "sem_rank": rank, "bm25_rank": None}
+
+    for rank, idx in enumerate(bm25_top_idx, 1):
+        d = docs[idx]
+        key = d["text"]
+        rrf[key] = rrf.get(key, 0.0) + 1.0 / (RRF_K + rank)
+        if key not in payload:
+            payload[key] = {
+                "text": d["text"],
+                "metadata": d["metadata"],
+                "distance": float("nan"),
+                "sem_rank": None,
+            }
+        payload[key]["bm25_rank"] = rank
+
+    ranked_keys = sorted(rrf.keys(), key=lambda key: -rrf[key])[:k]
+    return [payload[key] for key in ranked_keys]
+
+
+# --------------------------------------------------------------------------- #
+# Stretch: Fixed-size chunking comparison
+# --------------------------------------------------------------------------- #
+
+
+def _get_or_create_fixed_collection():
+    return get_client().get_or_create_collection(
+        name=FIXED_COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"},
+    )
+
+
+def build_index_fixed(rebuild: bool = False):
+    """Embed the fixed-size corpus into a separate ChromaDB collection."""
+    client = get_client()
+    if rebuild:
+        try:
+            client.delete_collection(FIXED_COLLECTION_NAME)
+            print("[index-fixed] dropped existing collection")
+        except Exception:
+            pass
+
+    collection = _get_or_create_fixed_collection()
+    corpus = build_corpus_fixed()
+
+    if not rebuild and collection.count() == len(corpus):
+        print(f"[index-fixed] up to date: {collection.count()} vectors — skipping.")
+        return collection
+
+    if collection.count() != 0:
+        client.delete_collection(FIXED_COLLECTION_NAME)
+        collection = _get_or_create_fixed_collection()
+
+    print(f"[index-fixed] embedding {len(corpus)} fixed-size chunks …")
+    texts = [c.text for c in corpus]
+    embeddings = _embed(texts)
+    ids = [_chunk_id(c, i) for i, c in enumerate(corpus)]
+    metadatas = [c.metadata for c in corpus]
+
+    for i in range(0, len(corpus), EMBED_BATCH):
+        sl = slice(i, i + EMBED_BATCH)
+        collection.add(
+            ids=ids[sl],
+            documents=texts[sl],
+            embeddings=embeddings[sl].tolist(),
+            metadatas=metadatas[sl],
+        )
+    print(f"[index-fixed] done. {collection.count()} vectors")
+    return collection
+
+
+def retrieve_context_fixed(query: str, k: int = DEFAULT_K) -> list[dict]:
+    """Retrieve from the fixed-size chunking collection (comparison only)."""
+    collection = _get_or_create_fixed_collection()
     query_emb = get_model().encode([query], normalize_embeddings=True)[0].tolist()
     res = collection.query(query_embeddings=[query_emb], n_results=k)
     docs = res["documents"][0]

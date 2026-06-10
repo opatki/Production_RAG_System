@@ -16,16 +16,6 @@ using a HYBRID strategy keyed on the source type (see planning.md > Chunking Str
         -> PREPEND the source platform into the TEXT BODY of every chunk so the
            embedding captures institutional/spatial context (planning.md).
 
-IMPORTANT NOTE ON "MARKDOWN" CHUNKING
--------------------------------------
-The planning doc specifies a "markdown-element" chunker that splits on headers like
-`### Hours`. The scraped source files contain NO markdown headers — they are flat
-text where section labels (`Hours`, `Menu`, `Contact Us`, ...) appear as bare lines.
-A literal markdown splitter would emit one chunk per file. Track A therefore uses a
-header-DETECTION heuristic that recognizes those bare label lines as structural
-headers and splits on them — preserving the spec's intent (keep hours/menu/payment
-facts bundled as one semantic unit) on the data we actually have.
-
 This script is the VALIDATION CHECKPOINT only. It does not embed anything.
 The `build_corpus()` function returns the chunk list (text + metadata) that
 Milestone 4 will feed to all-MiniLM-L6-v2 / ChromaDB.
@@ -502,6 +492,66 @@ def validate(corpus: list[Chunk]) -> None:
     print(f"\nRandomly sampling {k} complete chunks for visual inspection:")
     for i, chunk in enumerate(random.sample(corpus, k), start=1):
         _print_chunk(chunk, i)
+
+
+# --------------------------------------------------------------------------- #
+# Stretch: Fixed-size chunking (uniform strategy for comparison)
+# --------------------------------------------------------------------------- #
+
+
+def chunk_fixed_size(
+    raw: str,
+    stem: str,
+    size: int = 600,
+    overlap: int = 100,
+) -> list[Chunk]:
+    """Uniform fixed-size sliding window applied to ALL document types.
+
+    Used only for the chunking-strategy comparison in the stretch features.
+    Unlike the hybrid strategy, this does not distinguish structured vs.
+    unstructured sources — every document is flattened to a single stream and
+    split identically. The source label is prepended to every chunk so the
+    embedding retains provenance context.
+    """
+    text = re.sub(r"\s+", " ", clean_text(raw)).strip()
+    platform = DISPLAY_NAMES.get(stem, stem)
+    prefix = f"[Source: {platform}] "
+    chunks: list[Chunk] = []
+    idx, start, n = 0, 0, len(text)
+    while start < n:
+        end = min(start + size, n)
+        body = text[start:end].strip()
+        if body:
+            full = f"{prefix}{body}"
+            chunks.append(
+                Chunk(
+                    text=full,
+                    metadata={
+                        "source_file": f"{stem}.txt",
+                        "platform": platform,
+                        "track": "fixed",
+                        "strategy": "fixed-size",
+                        "window": str(size),
+                        "overlap": overlap,
+                        "char_len": len(full),
+                        "chunk_index": idx,
+                    },
+                )
+            )
+            idx += 1
+        if end >= n:
+            break
+        start = max(end - overlap, start + 1)
+    return chunks
+
+
+def build_corpus_fixed(directory: Path = DOCUMENTS_DIR) -> list[Chunk]:
+    """Corpus using uniform fixed-size chunking for ALL sources (comparison only)."""
+    docs = load_documents(directory)
+    corpus: list[Chunk] = []
+    for stem, text in docs.items():
+        corpus.extend(chunk_fixed_size(text, stem))
+    return corpus
 
 
 if __name__ == "__main__":

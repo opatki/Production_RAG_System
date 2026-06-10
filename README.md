@@ -1,5 +1,6 @@
 # The Unofficial Guide — Project 1
 
+
 > **How to use this template:**
 > Complete each section *after* you've built and tested the corresponding part of your system.
 > Do not write placeholder text — if a section isn't done yet, leave it blank and come back.
@@ -321,3 +322,101 @@ The spec called for "Markdown Element-Based Chunking" for Track A, splitting on 
 - *What I gave the AI:* I provided the Retrieval Approach section from planning.md (specifying `all-MiniLM-L6-v2`, 384-dimensional vectors, ChromaDB with cosine distance, top-k = 5) alongside the `ingest_pipeline.py` output from Instance 1. I also provided the Evaluation Plan's 5 test queries and the distance threshold (< 0.5) I had specified for on-topic results.
 - *What it produced:* `embed_retrieve.py` with `build_index()` to embed and persist all chunks into a local ChromaDB collection, and `retrieve_context(query, k=5)` returning ranked results with text, metadata, and cosine distance. It also generated the `run_evaluation()` verification block that runs all 5 eval queries and prints distance scores.
 - *What I changed or overrode:* The spec said to inject global page context (restaurant name) into chunk metadata only, not the body. After seeing retrieval fail to match sparse Track A chunks against entity-specific queries (e.g. a bare `Academic Year Hours` chunk never matching "Segundo hours"), I directed the AI to add a `_embed_text()` function that prepends the restaurant name to Track A chunk text at embed time — so the vector captures the entity — while keeping the stored document and metadata unchanged. This was a targeted fix to the entity-resolution gap I had flagged in the Anticipated Challenges section of planning.md.
+
+
+---
+
+## Stretch Features
+
+### Hybrid Search
+
+**Approach:** Hybrid search combines two independent retrieval signals — dense semantic vectors (ChromaDB + `all-MiniLM-L6-v2`) and sparse keyword matching (BM25 via `rank_bm25`) — using **Reciprocal Rank Fusion (RRF)**. Each result's final score is `Σ 1 / (60 + rank_i)` summed across both ranked lists. RRF is used instead of score-level combination because BM25 and cosine distance are on incompatible scales; working with ranks avoids normalization entirely. Both legs over-fetch `k × 4` candidates before merging, then the top-k by RRF score are returned. Implementation: [embed_retrieve.py — `hybrid_retrieve()`](embed_retrieve.py).
+
+**3-query comparison:**
+
+| Query | Method | Top-1 chunk | Top-1 dist | Answer |
+|---|---|---|---|---|
+| Segundo hours on Tuesday | Semantic | `ucd_segundo_dc.txt \| Academic Year Hours` | 0.170 | Correct |
+| Segundo hours on Tuesday | Hybrid | `ucd_segundo_dc.txt \| Lunch` (sem rank 3) | — | Correct |
+| Gunrock meal swipes / AggieCash | Semantic | `gunrock.txt \| Reservations` | 0.436 | Fallback |
+| Gunrock meal swipes / AggieCash | Hybrid | `gunrock.txt \| Reservations` (sem 1, bm25 4) | — | Fallback |
+| Garlic knots / stromboli near campus | Semantic | `latitude_restaurant.txt \| Yassa Au Poulet` | 0.557 | Fallback |
+| Garlic knots / stromboli near campus | Hybrid | `ucd_segundo_dc.txt \| Build Your Own Veggie Omelette` | — | Fallback |
+
+**Which performed better:** Semantic wins on Q1 — the direct hours chunk (dist=0.170) is demoted to rank 2 in hybrid because BM25 over-weights the word "Tuesday" and promotes adjacent lunch chunks. On Q2, hybrid is marginally better — BM25 keeps all top results within `gunrock.txt` whereas semantic pulls in a Segundo chunk (dist=0.452) that keyword-matches "AggieCash". On Q3, neither method wins; hybrid makes things worse by surfacing ingredient-list chunks from Segundo that contain the word "garlic" as a raw keyword match (`Whole Peeled Garlic Cloves`), which are completely irrelevant. For factual, entity-specific queries over structured documents, pure semantic retrieval outperforms hybrid on this corpus.
+
+---
+
+### Chunking Strategy Comparison
+
+**Strategies compared:**
+- **Hybrid (current):** Track A documents (official UCD pages) chunked by structural headers, 0 overlap, restaurant name injected into embedded text. Track B (social sources) chunked with 500–800 char sliding window, 100-char overlap. 992 total chunks.
+- **Fixed-size:** All 10 documents flattened to a single text stream and split with a uniform 600-char window, 100-char overlap. No structure awareness, no entity injection. 1196 total chunks.
+
+**Results on 3 queries:**
+
+| Query | Strategy | Top-1 source | Top-1 dist | Top-1 snippet (first 100 chars) | Answer |
+|---|---|---|---|---|---|
+| Segundo hours on Tuesday | Hybrid | `ucd_segundo_dc.txt \| Academic Year Hours` | **0.170** | "Monday–Friday: 7 AM–10 PM Saturday: 9 AM–8 PM…" | **Correct** |
+| Segundo hours on Tuesday | Fixed | `ucd_segundo_dc.txt` | 0.257 | "[Source: Segundo] anager Gabriel Trejo ggtrejo@…" | Correct |
+| Gunrock meal swipes | Hybrid | `gunrock.txt \| Reservations` | **0.436** | "Reservations The Gunrock is now offering reservations…" | Fallback |
+| Gunrock meal swipes | Fixed | `gunrock.txt` | 0.456 | "[Source: Gunrock] …Location The Gunrock is located in the Silo…" | Fallback |
+| Garlic knots near campus | Hybrid | `latitude_restaurant.txt \| Yassa Au Poulet` | 0.557 | "Yassa Au Poulet Ingredients: Csc chicken drumsticks…" | Fallback |
+| Garlic knots near campus | Fixed | `ucd_segundo_dc.txt` | 0.513 | "[Source: Segundo] …Whole Peeled Garlic Cloves, Canola Salad Oil…" | Fallback |
+
+**Analysis:** Hybrid chunking is clearly better for Q1 (dist 0.170 vs 0.257, and the hybrid chunk contains the direct answer while the fixed top chunk opens mid-sentence with staff contact info). The difference comes from the structural-header chunker in Track A: it bundles `Academic Year Hours` with the hours table as a single semantic unit, making it a near-exact match. Fixed-size splitting cuts through that boundary, so the top chunk lands on a staff bio page that happened to be adjacent to the hours table in the flat text stream. For Q3, fixed-size is actively harmful — it surfaces ingredient lists containing "Garlic Cloves" as keyword noise, which even BM25 avoids because there's no frequency signal. Hybrid's social-source chunks (Quora, Reddit) are at least topically adjacent to the query domain. Fixed-size performs comparably only when the relevant information is already dense (Q2), where both strategies find Gunrock content but neither finds the payment policy.
+
+---
+
+### Metadata Filtering
+
+Filtering is implemented via ChromaDB's `where` parameter, accessible through an optional `where` dict on `retrieve_context()` and surfaced in the Gradio UI as a source-file dropdown. Implementation: [embed_retrieve.py — `retrieve_context(where=...)`](embed_retrieve.py), [app.py — source dropdown](app.py).
+
+**Demo — query: "What are the dining hours?"**
+
+*Without filter (All sources):*
+```
+[1] latitude_restaurant.txt — Dinner  (distance: 0.401)
+[2] latitude_restaurant.txt — Dinner  (distance: 0.401)
+[3] latitude_restaurant.txt — Lunch   (distance: 0.415)
+[4] latitude_restaurant.txt — Lunch   (distance: 0.415)
+[5] ucd_segundo_dc.txt      — Lunch   (distance: 0.421)
+```
+Answer covers both Latitude Restaurant and Segundo Dining Commons hours.
+
+*With filter: `source_file = "ucd_segundo_dc.txt"`:*
+```
+[1] ucd_segundo_dc.txt — Lunch    (distance: 0.421)
+[2] ucd_segundo_dc.txt — Lunch    (distance: 0.421)
+[3] ucd_segundo_dc.txt — Lunch    (distance: 0.424)
+[4] ucd_segundo_dc.txt — Lunch    (distance: 0.424)
+[5] ucd_segundo_dc.txt — Dinner   (distance: 0.444)
+```
+Answer is scoped exclusively to Segundo Dining Commons hours. Latitude results are completely excluded, demonstrating a visible effect on which documents are returned.
+
+---
+
+### Conversational Memory
+
+Multi-turn memory is implemented in two layers. First, the last 3 turns of conversation history are appended to the LLM prompt as a "Conversation history (for context only)" block, so the model can use prior answers when generating. Second, before retrieval, a **query rewriting step** rewrites pronoun-heavy follow-ups ("Can I go *there* on Sunday?") into self-contained queries ("What are the hours for Segundo Dining Commons on Sunday?") using a separate Groq call, so the vector search gets the correct entity rather than a meaningless pronoun. Implementation: [app.py — `_rewrite_query()`, `answer_question()`](app.py).
+
+**3-turn example transcript:**
+
+```
+User:      What are the hours for Segundo Dining Commons on a Tuesday?
+Assistant: The hours for Segundo Dining Commons on a Tuesday are 7 AM–10 PM.
+
+User:      Can I go there on Sunday too?
+           [rewritten for retrieval: "What are the hours for Segundo Dining Commons on a Sunday"]
+Assistant: Yes, you can go to Segundo Dining Commons on Sunday.
+           The hours on Sunday are 9 AM–8 PM.
+
+User:      Is it the same place that serves breakfast?
+           [rewritten for retrieval: "What dining commons serves breakfast at Segundo Dining Commons location"]
+Assistant: Yes, Segundo Dining Commons serves breakfast,
+           as it is open from 7 AM on Tuesdays and 9 AM on Sundays.
+```
+
+The second and third turns reference "there" and "it" — both are resolved to Segundo Dining Commons by the query rewriter before retrieval, and the answers correctly use the prior context to answer without re-stating the full name in the query.
+
+---
