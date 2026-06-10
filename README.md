@@ -45,7 +45,8 @@ My dataset contains two distinct document archetypes that require different hand
 - Social Media/Review Platforms (Unstructured): Reddit threads and Yelp reviews are highly conversational. A single Reddit comment might list five different favorite spots in Davis in a single paragraph. A 500–800 character size is tight enough to isolate individual restaurant recommendations without mashing distinct spots together, while the 100-character overlap ensures that transitions or multi-sentence descriptions of a specific dish (like a review highlighting a specific spicy wing flavor or garlic knot spot) aren't cut in half.
 - Metadata Injection (Context Preservation): Because forum comments often use pronouns (e.g., "The food truck outside Silo has the best sliders, I spent all my AggieCash there"), I will preprocess unstructured files by appending the thread title or platform metadata directly into the text body of each chunk. This ensures the vector embeddings capture the spatial and institutional context of Davis.
 
-**Final chunk count:**
+**Final chunk count:** 
+992 Chunks
 
 ---
 
@@ -58,8 +59,10 @@ My dataset contains two distinct document archetypes that require different hand
      latency, and local vs. API-hosted. -->
 
 **Model used:**
+`all-MiniLM-L6-v2` (HuggingFace sentence-transformers). It generates 384-dimensional vectors and runs entirely locally, requiring no API calls or cost during development. It is lightweight and fast, making it well-suited for iterating on a local Chroma vector store.
 
 **Production tradeoff reflection:**
+If deploying this to a broader student base and cost wasn't an issue, I would upgrade to OpenAI's `text-embedding-3-small`. While `all-MiniLM-L6-v2` is fast and free, it struggles slightly with highly specific domain jargon or slang (e.g., students calling Segundo "the DC" or referring to AggieCash colloquially). A commercial model offers a longer context window and better multilingual support, which is useful if international students are searching for specific hometown cuisines. However, it introduces per-query API latency and ongoing cost, requiring a tradeoff analysis against backend throughput requirements and budget constraints.
 
 ---
 
@@ -73,8 +76,10 @@ My dataset contains two distinct document archetypes that require different hand
      the mechanism. -->
 
 **System prompt grounding instruction:**
+The system prompt contains two grounding mechanisms working together. First, a hard constraint in the system role: *"Answer using ONLY the information provided in the context below. Do not use any outside knowledge or make assumptions beyond what is written. If the context does not contain enough information to answer the question, respond with exactly: 'I don't have enough information on that.'"* Second, a structural constraint in the user message: the top-5 retrieved chunks are serialized as a numbered context block (`[1] … [2] … [3] …`) and prepended to the question, so the model's attention is explicitly anchored to the retrieved material before it sees the query. Together, the role-level instruction tells the model *what rules to follow*, and the message-level formatting tells it *exactly what text it is allowed to draw from*.
 
 **How source attribution is surfaced in the response:**
+The Gradio interface uses two independent output boxes. The left box contains only the LLM-generated answer. The right box ("Sources") is populated programmatically by `_format_citations()` in [app.py](app.py), which reads the `source_file`, `section`/`platform`, and cosine distance from the ChromaDB metadata of each retrieved chunk — it never asks the LLM to cite anything. This means citations are always accurate and tied to actual retrieved chunks, regardless of what the model generates.
 
 ---
 
